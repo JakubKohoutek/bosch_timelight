@@ -31,6 +31,11 @@ const unsigned long FRAME_TIMEOUT       = 2000; // microseconds
 uint8_t        prevByte2                = 0;    // previous byte
 bool           inFrame                  = false;
 
+// Remaining time tracking
+int            remainingHours           = 0;
+int            remainingMinutes         = 0;
+unsigned long  lastUpdateTime           = 0;
+
 void turnOffWiFi() {
     logMessage(String("[MAIN] Turning the WiFi off"));
     WiFi.disconnect();
@@ -72,10 +77,49 @@ void setup() {
 
     // Set up the html server
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(LittleFS, logFilePath, "text/plain");
+        String html = "<!DOCTYPE html><html><head>";
+        html += "<meta charset='UTF-8'>";
+        html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+        html += "<meta http-equiv='refresh' content='5'>";
+        html += "<title>Dishwasher TimeLight</title>";
+        html += "<style>";
+        html += "body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }";
+        html += ".container { text-align: center; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }";
+        html += "h1 { color: #333; margin-bottom: 30px; }";
+        html += ".time { font-size: 72px; font-weight: bold; color: #667eea; margin: 20px 0; }";
+        html += ".status { font-size: 18px; color: #666; margin-top: 20px; }";
+        html += "a { color: #667eea; text-decoration: none; margin: 0 10px; }";
+        html += "a:hover { text-decoration: underline; }";
+        html += "</style></head><body>";
+        html += "<div class='container'>";
+        html += "<h1>🍽️ Dishwasher Status</h1>";
+        
+        if (lastUpdateTime > 0 && (millis() - lastUpdateTime < 60000)) {
+            html += "<div class='time'>";
+            if (remainingHours > 0 || remainingMinutes > 0) {
+                if (remainingHours < 10) html += "0";
+                html += String(remainingHours) + ":";
+                if (remainingMinutes < 10) html += "0";
+                html += String(remainingMinutes);
+            } else {
+                html += "Done!";
+            }
+            html += "</div>";
+            html += "<div class='status'>Remaining Time</div>";
+        } else {
+            html += "<div class='time'>--:--</div>";
+            html += "<div class='status'>No recent data</div>";
+        }
+        
+        html += "<div style='margin-top: 30px;'>";
+        html += "<a href='/logs'>View Logs</a>";
+        html += "<a href='/webserial'>WebSerial</a>";
+        html += "</div>";
+        html += "</div></body></html>";
+        request->send(200, "text/html", html);
     });
 
-    server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(LittleFS, logFilePath, "text/plain");
     });
 
@@ -156,9 +200,10 @@ void loop() {
                             
                             if (frameLen >= 5 && frameBuffer[3] == 0x08) {
                                 uint8_t hexValue = frameBuffer[4];
-                                uint8_t hours = hexValue / 60;
-                                uint8_t minutes = hexValue % 60;
-                                snprintf(logLine + pos, sizeof(logLine) - pos, "Remaining time: %02d:%02d", hours, minutes);
+                                remainingHours = hexValue / 60;
+                                remainingMinutes = hexValue % 60;
+                                lastUpdateTime = millis();
+                                snprintf(logLine + pos, sizeof(logLine) - pos, "Remaining time: %02d:%02d", remainingHours, remainingMinutes);
                             }
                             
                             logMessage(String(logLine));
