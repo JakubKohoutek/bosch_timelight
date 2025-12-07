@@ -102,13 +102,13 @@ void setup() {
         html += "    document.getElementById('status').innerText = data.status;";
         html += "  });";
         html += "}";
-        html += "setInterval(updateTime, 60000);";
+        html += "setInterval(updateTime, 10000);";
         html += "</script>";
         html += "</head><body>";
         html += "<div class='container'>";
         html += "<h1>🍽️ Dishwasher Status</h1>";
         
-        if (lastUpdateTime > 0 && (millis() - lastUpdateTime < 10000)) {
+        if (lastUpdateTime > 0) {
             html += "<div class='time' id='time'>";
             if (remainingHours > 0 || remainingMinutes > 0) {
                 if (remainingHours < 10) html += "0";
@@ -122,7 +122,7 @@ void setup() {
             html += "<div class='status' id='status'>Remaining Time</div>";
         } else {
             html += "<div class='time' id='time'>--:--</div>";
-            html += "<div class='status' id='status'>No recent data</div>";
+            html += "<div class='status' id='status'>No data</div>";
         }
         
         html += "<div style='margin-top: 30px;'>";
@@ -141,7 +141,7 @@ void setup() {
         String json = "{\"time\":\"";
         String status = "";
         
-        if (lastUpdateTime > 0 && (millis() - lastUpdateTime < 60000)) {
+        if (lastUpdateTime > 0) {
             if (remainingHours > 0 || remainingMinutes > 0) {
                 if (remainingHours < 10) json += "0";
                 json += String(remainingHours) + ":";
@@ -154,7 +154,7 @@ void setup() {
             }
         } else {
             json += "--:--";
-            status = "No recent data";
+            status = "No data";
         }
         
         json += "\",\"status\":\"" + status + "\"}";
