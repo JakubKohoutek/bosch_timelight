@@ -1,4 +1,5 @@
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <WebSerial.h>
 #include <credentials.h>
@@ -60,6 +61,10 @@ void setup() {
     Serial.println(String("\nTimeLight module frame logger starting..."));
 
     turnOnWiFi();
+    
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    
     configTime(MY_TZ, MY_NTP_SERVER);
 
     // Inititate eeprom memory
@@ -80,7 +85,6 @@ void setup() {
         String html = "<!DOCTYPE html><html><head>";
         html += "<meta charset='UTF-8'>";
         html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-        html += "<meta http-equiv='refresh' content='5'>";
         html += "<title>Dishwasher TimeLight</title>";
         html += "<style>";
         html += "body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }";
@@ -90,12 +94,22 @@ void setup() {
         html += ".status { font-size: 18px; color: #666; margin-top: 20px; }";
         html += "a { color: #667eea; text-decoration: none; margin: 0 10px; }";
         html += "a:hover { text-decoration: underline; }";
-        html += "</style></head><body>";
+        html += "</style>";
+        html += "<script>";
+        html += "function updateTime() {";
+        html += "  fetch('/api/time').then(r => r.json()).then(data => {";
+        html += "    document.getElementById('time').innerText = data.time;";
+        html += "    document.getElementById('status').innerText = data.status;";
+        html += "  });";
+        html += "}";
+        html += "setInterval(updateTime, 60000);";
+        html += "</script>";
+        html += "</head><body>";
         html += "<div class='container'>";
         html += "<h1>🍽️ Dishwasher Status</h1>";
         
-        if (lastUpdateTime > 0 && (millis() - lastUpdateTime < 60000)) {
-            html += "<div class='time'>";
+        if (lastUpdateTime > 0 && (millis() - lastUpdateTime < 10000)) {
+            html += "<div class='time' id='time'>";
             if (remainingHours > 0 || remainingMinutes > 0) {
                 if (remainingHours < 10) html += "0";
                 html += String(remainingHours) + ":";
@@ -105,10 +119,10 @@ void setup() {
                 html += "Done!";
             }
             html += "</div>";
-            html += "<div class='status'>Remaining Time</div>";
+            html += "<div class='status' id='status'>Remaining Time</div>";
         } else {
-            html += "<div class='time'>--:--</div>";
-            html += "<div class='status'>No recent data</div>";
+            html += "<div class='time' id='time'>--:--</div>";
+            html += "<div class='status' id='status'>No recent data</div>";
         }
         
         html += "<div style='margin-top: 30px;'>";
@@ -123,11 +137,43 @@ void setup() {
         request->send(LittleFS, logFilePath, "text/plain");
     });
 
+    server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String json = "{\"time\":\"";
+        String status = "";
+        
+        if (lastUpdateTime > 0 && (millis() - lastUpdateTime < 60000)) {
+            if (remainingHours > 0 || remainingMinutes > 0) {
+                if (remainingHours < 10) json += "0";
+                json += String(remainingHours) + ":";
+                if (remainingMinutes < 10) json += "0";
+                json += String(remainingMinutes);
+                status = "Remaining Time";
+            } else {
+                json += "Done!";
+                status = "Remaining Time";
+            }
+        } else {
+            json += "--:--";
+            status = "No recent data";
+        }
+        
+        json += "\",\"status\":\"" + status + "\"}";
+        request->send(200, "application/json", json);
+    });
+
     server.onNotFound([](AsyncWebServerRequest *request) {
         request->send(404, "text/plain", "Sorry, not found. Did you mean to go to /webserial ?");
     });
 
     server.begin();
+    
+    // Setup mDNS for dishwasher.local (after server starts)
+    if (MDNS.begin("dishwasher")) {
+        Serial.println("mDNS responder started: dishwasher.local");
+        MDNS.addService("http", "tcp", 80);
+    } else {
+        Serial.println("Error setting up mDNS responder!");
+    }
 }
 
 void handleWebSerialMessage(uint8_t *data, size_t len){
@@ -157,6 +203,7 @@ void handleWebSerialMessage(uint8_t *data, size_t len){
 
 void loop() {
     OTA::handle();
+    MDNS.update();
     // read all available bytes
     while (dbus.available()) {
         uint8_t b = dbus.read();
