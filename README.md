@@ -62,7 +62,7 @@ D-Bus 2 is a single-wire bus protocol used in Bosch appliances. All participants
 │  │  └─┬─┘ └──────────┬──────────┘ └─┬─┘ │
 │  │    │              │              │   └─── ACK by TimeLight module: 0x6A
 │  │    │              │              └─────── Checksum: 0x8A83
-│  │    │              └────────────────────── 10 data bytes (8 bytes)
+│  │    │              └────────────────────── Bytes with parameters (8 bytes)
 │  │    └───────────────────────────────────── Command and subcommand (2 bytes)
 │  └────────────────────────────────────────── Destination
 └───────────────────────────────────────────── Length (10 bytes)
