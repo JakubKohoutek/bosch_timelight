@@ -84,23 +84,26 @@ void setup() {
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         String html = "<!DOCTYPE html><html><head>";
         html += "<meta charset='UTF-8'>";
-        html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+        html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'>";
         html += "<title>Dishwasher TimeLight</title>";
         html += "<style>";
-        html += "body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }";
-        html += ".container { text-align: center; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }";
-        html += "h1 { color: #333; margin-bottom: 30px; }";
-        html += ".time { font-size: 72px; font-weight: bold; color: #667eea; margin: 20px 0; }";
-        html += ".status { font-size: 18px; color: #666; margin-top: 20px; }";
-        html += "a { color: #667eea; text-decoration: none; margin: 0 10px; }";
-        html += "a:hover { text-decoration: underline; }";
+        html += "* { box-sizing: border-box; margin: 0; padding: 0; }";
+        html += "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }";
+        html += ".container { text-align: center; background: white; padding: clamp(20px, 5vw, 40px); border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 450px; }";
+        html += "h1 { color: #333; margin-bottom: clamp(15px, 4vw, 30px); font-size: clamp(20px, 6vw, 32px); }";
+        html += ".time { font-size: clamp(48px, 15vw, 72px); font-weight: bold; color: #667eea; margin: clamp(15px, 4vw, 20px) 0; line-height: 1.2; }";
+        html += ".status { font-size: clamp(14px, 4vw, 18px); color: #666; margin-top: clamp(10px, 3vw, 20px); }";
+        html += ".links { margin-top: clamp(20px, 5vw, 30px); display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }";
+        html += "a { color: #667eea; text-decoration: none; font-size: clamp(14px, 4vw, 16px); padding: 10px 20px; border: 2px solid #667eea; border-radius: 8px; display: inline-block; transition: all 0.3s; min-width: 100px; }";
+        html += "a:hover, a:active { background: #667eea; color: white; }";
+        html += "@media (max-width: 480px) { .container { border-radius: 15px; } a { padding: 12px 18px; font-size: 15px; } }";
         html += "</style>";
         html += "<script>";
         html += "function updateTime() {";
         html += "  fetch('/api/time').then(r => r.json()).then(data => {";
         html += "    document.getElementById('time').innerText = data.time;";
         html += "    document.getElementById('status').innerText = data.status;";
-        html += "  });";
+        html += "  }).catch(e => console.error('Update failed:', e));";
         html += "}";
         html += "setInterval(updateTime, 10000);";
         html += "</script>";
@@ -125,7 +128,7 @@ void setup() {
             html += "<div class='status' id='status'>No data</div>";
         }
         
-        html += "<div style='margin-top: 30px;'>";
+        html += "<div class='links'>";
         html += "<a href='/logs'>View Logs</a>";
         html += "<a href='/webserial'>WebSerial</a>";
         html += "</div>";
