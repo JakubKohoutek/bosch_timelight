@@ -93,6 +93,9 @@ void setup() {
         html += "h1 { color: #333; margin-bottom: clamp(15px, 4vw, 30px); font-size: clamp(20px, 6vw, 32px); }";
         html += ".time { font-size: clamp(48px, 15vw, 72px); font-weight: bold; color: #667eea; margin: clamp(15px, 4vw, 20px) 0; line-height: 1.2; }";
         html += ".status { font-size: clamp(14px, 4vw, 18px); color: #666; margin-top: clamp(10px, 3vw, 20px); }";
+        html += ".ip-info { font-size: 12px; color: #999; margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px; }";
+        html += ".ip-address { font-family: monospace; font-weight: bold; color: #667eea; font-size: 14px; }";
+        html += ".bookmark-hint { font-size: 11px; color: #666; margin-top: 5px; }";
         html += ".links { margin-top: clamp(20px, 5vw, 30px); display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }";
         html += "a { color: #667eea; text-decoration: none; font-size: clamp(14px, 4vw, 16px); padding: 10px 20px; border: 2px solid #667eea; border-radius: 8px; display: inline-block; transition: all 0.3s; min-width: 100px; }";
         html += "a:hover, a:active { background: #667eea; color: white; }";
@@ -132,6 +135,14 @@ void setup() {
         html += "<a href='/logs'>View Logs</a>";
         html += "<a href='/webserial'>WebSerial</a>";
         html += "</div>";
+        
+        // Add IP address info for easy bookmarking
+        html += "<div class='ip-info'>";
+        html += "📱 Bookmark this page:<br>";
+        html += "<span class='ip-address'>http://" + WiFi.localIP().toString() + "/</span><br>";
+        html += "<span class='bookmark-hint'>(Tap browser menu → Add to Home Screen)</span>";
+        html += "</div>";
+        
         html += "</div></body></html>";
         request->send(200, "text/html", html);
     });
