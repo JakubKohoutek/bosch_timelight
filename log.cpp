@@ -5,7 +5,7 @@
 #include "log.h"
 
 const char* logFilePath = "/log.txt";
-const size_t maxLogFileSize = 4096 * 10; // 40KB max log size, adjust as needed
+const size_t maxLogFileSize = 4096 * 100; // 400KB max log size (increased from 40KB)
 
 void initiateLog() {
     if (!LittleFS.begin()) {
@@ -64,17 +64,55 @@ void truncateLogIfNeeded() {
         logFile.close();
         return;
     }
-    logFile.close();
 
-    // If file is too large, simply clear it to avoid memory issues
-    // Reading 40KB into memory on ESP8266 causes crashes
-    logFile = LittleFS.open(logFilePath, "w");
-    if (!logFile) {
-        WebSerial.println("[LOG] Failed to open log file for truncation");
+    // File is too large - remove oldest lines one by one
+    // Use char buffer instead of String to minimize heap fragmentation
+    String tempPath = "/log_temp.txt";
+    File tempFile = LittleFS.open(tempPath, "w");
+    if (!tempFile) {
+        logFile.close();
+        WebSerial.println("[LOG] Failed to create temp file for truncation");
         return;
     }
-    logFile.println("[LOG] Log truncated due to size limit");
+
+    // Calculate how many bytes we need to remove (with some buffer)
+    size_t bytesToRemove = fileSize - (maxLogFileSize * 3 / 4); // Keep at 75% capacity
+    size_t bytesSkipped = 0;
+    bool skippingPhase = true;
+    
+    char buffer[256]; // Fixed buffer for line reading
+    int bufferIndex = 0;
+
+    while (logFile.available()) {
+        char c = logFile.read();
+        
+        if (c == '\n' || bufferIndex >= 255) {
+            buffer[bufferIndex] = '\0';
+            
+            if (skippingPhase) {
+                bytesSkipped += bufferIndex + 1; // +1 for newline
+                if (bytesSkipped >= bytesToRemove) {
+                    skippingPhase = false;
+                    tempFile.println("[LOG] --- Older entries removed due to size limit ---");
+                }
+            } else {
+                tempFile.println(buffer);
+            }
+            
+            bufferIndex = 0;
+        } else {
+            buffer[bufferIndex++] = c;
+        }
+    }
+
     logFile.close();
+    tempFile.close();
+
+    // Replace original file with temp file
+    LittleFS.remove(logFilePath);
+    LittleFS.rename(tempPath, logFilePath);
+    
+    WebSerial.println("[LOG] Removed oldest entries to maintain size limit");
 }
 
 void logMessage(const String& message) {
