@@ -49,34 +49,50 @@ D-Bus 2 is a single-wire bus protocol used in Bosch appliances. All participants
 ```
 05 14 10 05 00 FF 00 DE 62 1A
 │  │  └─────┬──────┘ └─┬─┘ │
-│  │        │          │   └─── ACK byte: 0x1A
-│  │        │          └─────── CRC16-XMODEM Checksum (2 bytes): 0xDE62
-│  │        └────────────────── 5 data bytes (command + parameters)
-│  └─────────────────────────── DS: 0x14 (Dest=0x1, Sub=0x4)
-└────────────────────────────── Length: 5 data bytes
+│  │        │          │   └─ ACK byte: 0x1A
+│  │        │          └───── CRC16-XMODEM Checksum (2 bytes): 0xDE62
+│  │        └──────────────── 5 data bytes (command + parameters)
+│  └───────────────────────── DS: 0x14 (Dest=0x1, Sub=0x4)
+└──────────────────────────── Length: 5 data bytes (except dest, checksum and ack)
 ```
 
-**Example - Time Information Frame:**
+**Time Information Frame:**
 ```
 0a 65 20 08 49 34 30 07 37 00 01 0d 8a 83 6a
 │  │  └─┬─┘ └──────────┬──────────┘ └─┬─┘ │
-│  │    │              │              │   └─── ACK by TimeLight module: 0x6A
-│  │    │              │              └─────── Checksum: 0x8A83
-│  │    │              └────────────────────── Bytes with parameters (8 bytes)
-│  │    └───────────────────────────────────── Command and subcommand (2 bytes)
-│  └────────────────────────────────────────── Destination
-└───────────────────────────────────────────── Length (10 bytes)
+│  │    │              │              │   └─ ACK by TimeLight module: 0x6A
+│  │    │              │              └───── Checksum: 0x8A83
+│  │    │              └──────────────────── Bytes with parameters (8 bytes)
+│  │    └─────────────────────────────────── Command and subcommand (2 bytes)
+│  └──────────────────────────────────────── Destination
+└─────────────────────────────────────────── Length (10 bytes)
 
-Actual frame structure:
+Time frame structure:
 0a      - Length: 10 (0x0a) data bytes
-65      - TimeLight module
-20      - Command
-08      - Subcommand - Time report?
+65      - TimeLight module destination
+20      - Time/Display command group
+08      - Subcommand - "Full time report"
 49      - Remaining time value: 73 (0x49) minutes = 1h 13m
-34 30 07 37 00 - Other data (unknown meaning at this point)
-01 0d   - Remaining time value again: 01 hours, 13 (0x0d) minutes
+34 30 07 37 - Other data, uncertain meaning, but maybe:
+└─┬─┘ │  └─── Counter that increases by 1 every minute if program is not running. Maximum value 
+  │   │       is 0x3b (0-59). Stops counting and is fixed since the progam is started 
+  │   │       - end time minutes according to some internal clock?
+  │   └────── Counter that increases by 1 once the following (minute?) byte reaches 60
+  │           if program is not running. Stops counting and is fixed since the progam is started 
+  │           - end time hours according to some internal clock?
+  └────────── Program (e.g. Eco, Normal) and attributes (e.g. Hygiene+, steam) bytes
+00 - Washing phase (0x03 Pre-wash, 0x02 Wash, 0x01 Rinse, 0x00 Dry)
+01 0d   - Remaining time value again in two bytes: 01 (0x01) hours, 13 (0x0d) minutes
 8a 83   - Checksum
 6a      - ACK
+```
+
+**Other useful commands:**
+```
+05 65 20 04 00 00 00 a7 fb 6a  Subcommand 04 with params 00 => program start
+03 65 20 00 64 a1 a1 6a        Subcommand 00 with param 64 => program end
+03 65 20 06 02 07 67 6a        Subcommand 06 => sensor status, door open (0b0???) vs. closed (0b1???)
+03 65 20 12 00 e8 92 6a        Subcommand 12 with param 00 => machine off
 ```
 
 ### Acknowledgement
