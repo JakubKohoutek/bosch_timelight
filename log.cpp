@@ -5,7 +5,7 @@
 #include "log.h"
 
 const char* logFilePath = "/log.txt";
-const size_t maxLogFileSize = 4096 * 100; // 400KB max log size (increased from 40KB)
+const size_t maxLogFileSize = 1024 * 100; // 100 KB max log size
 
 void initiateLog() {
     if (!LittleFS.begin()) {
