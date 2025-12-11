@@ -86,7 +86,7 @@ void truncateLogIfNeeded() {
     while (logFile.available()) {
         char c = logFile.read();
         
-        if (c == '\n' || bufferIndex >= 255) {
+        if (c == '\n') {
             buffer[bufferIndex] = '\0';
             
             if (skippingPhase) {
@@ -96,13 +96,17 @@ void truncateLogIfNeeded() {
                     tempFile.println("[LOG] --- Older entries removed due to size limit ---");
                 }
             } else {
-                tempFile.println(buffer);
+                // Only write non-empty lines
+                if (bufferIndex > 0) {
+                    tempFile.println(buffer);
+                }
             }
             
             bufferIndex = 0;
-        } else {
+        } else if (bufferIndex < 255) {
             buffer[bufferIndex++] = c;
         }
+        // If buffer is full (255 chars), silently skip remaining chars until newline
     }
 
     logFile.close();
