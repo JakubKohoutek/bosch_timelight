@@ -86,24 +86,48 @@ void truncateLogIfNeeded() {
     while (logFile.available()) {
         char c = logFile.read();
         
+        // Skip carriage returns entirely
+        if (c == '\r') {
+            continue;
+        }
+        
         if (c == '\n') {
+            // Null terminate the buffer
             buffer[bufferIndex] = '\0';
             
-            if (skippingPhase) {
-                bytesSkipped += bufferIndex + 1; // +1 for newline
-                if (bytesSkipped >= bytesToRemove) {
-                    skippingPhase = false;
-                    tempFile.println("[LOG] --- Older entries removed due to size limit ---");
+            // Only process non-empty lines (trim whitespace-only lines too)
+            if (bufferIndex > 0) {
+                // Check if line is all whitespace
+                bool hasContent = false;
+                for (int i = 0; i < bufferIndex; i++) {
+                    if (buffer[i] != ' ' && buffer[i] != '\t') {
+                        hasContent = true;
+                        break;
+                    }
                 }
-            } else {
-                // Only write non-empty lines
-                if (bufferIndex > 0) {
-                    tempFile.println(buffer);
+                
+                if (hasContent) {
+                    if (skippingPhase) {
+                        // Count this line in bytes to skip
+                        bytesSkipped += bufferIndex + 1; // +1 for newline
+                        if (bytesSkipped >= bytesToRemove) {
+                            skippingPhase = false;
+                            String truncationMessage = "[" + getTimestamp() + "] [LOG] --- Older entries removed due to size limit ---";
+                            tempFile.println(truncationMessage);
+                            // Write the current line
+                            tempFile.println(buffer);
+                        }
+                    } else {
+                        // Write the line
+                        tempFile.println(buffer);
+                    }
                 }
             }
             
+            // Reset buffer for next line
             bufferIndex = 0;
         } else if (bufferIndex < 255) {
+            // Add character to buffer
             buffer[bufferIndex++] = c;
         }
         // If buffer is full (255 chars), silently skip remaining chars until newline
@@ -121,13 +145,23 @@ void truncateLogIfNeeded() {
 
 void logMessage(const String& message) {
     String timestampedMessage = "[" + getTimestamp() + "] " + message;
-    WebSerial.println(timestampedMessage); // Keep WebSerial output for real-time monitoring
+    
+    // Always print to Serial
+    Serial.println(timestampedMessage);
+    
+    // Only print to WebSerial if WiFi is connected
+    if (WiFi.status() == WL_CONNECTED) {
+        WebSerial.println(timestampedMessage);
+    }
 
     truncateLogIfNeeded();
 
     File logFile = LittleFS.open(logFilePath, "a");
     if (!logFile) {
-        WebSerial.println("[LOG] Failed to open log file");
+        Serial.println("[LOG] Failed to open log file");
+        if (WiFi.status() == WL_CONNECTED) {
+            WebSerial.println("[LOG] Failed to open log file");
+        }
         return;
     }
     logFile.println(timestampedMessage);

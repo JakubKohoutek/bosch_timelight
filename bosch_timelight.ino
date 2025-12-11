@@ -57,8 +57,9 @@ void turnOffWiFi() {
 void turnOnWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
+    WiFi.persistent(false); // Don't write to flash every time - prevents flash wear
     WiFi.setSleepMode(WIFI_NONE_SLEEP); // Disable WiFi sleep to prevent disconnections
+    WiFi.setOutputPower(20.5); // Maximum transmit power for better stability
     WiFi.begin(ssid, password);
     
     int attempts = 0;
@@ -69,7 +70,7 @@ void turnOnWiFi() {
     }
     
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi connected!");
+        Serial.println(String("[MAIN] WiFi connected with signal strength: ") + WiFi.RSSI() + " dBm");
     } else {
         Serial.println("\nWiFi connection failed!");
     }
@@ -292,10 +293,10 @@ void setup() {
     
     // Setup mDNS for dishwasher.local (after server starts)
     if (MDNS.begin("dishwasher")) {
-        Serial.println("mDNS responder started: dishwasher.local");
+        logMessage(String("mDNS responder started: dishwasher.local"));
         MDNS.addService("http", "tcp", 80);
     } else {
-        Serial.println("Error setting up mDNS responder!");
+        logMessage(String("Error setting up mDNS responder!"));
     }
 }
 
@@ -315,10 +316,10 @@ void handleWebSerialMessage(uint8_t *data, size_t len){
     }
 
     if(command.equals("help")) {
-        logMessage((
+        logMessage(
           String("Available commands:\n") +
           "nothing\n"
-        ).c_str());
+        );
     } else {
         logMessage(String("Unknown command '") + command + "' with value '" + value +"'");
     }
@@ -327,22 +328,49 @@ void handleWebSerialMessage(uint8_t *data, size_t len){
 void loop() {
     // Check WiFi connection periodically and reconnect if needed
     static unsigned long lastWiFiCheck = 0;
-    if (millis() - lastWiFiCheck > 30000) { // Check every 30 seconds
+    static unsigned long lastSignalLog = 0;
+    
+    if (millis() - lastWiFiCheck > 10000) { // Check every 10 seconds (more frequent)
         lastWiFiCheck = millis();
         if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi disconnected! Attempting to reconnect...");
+            logMessage("[WIFI] Connection lost, reconnecting...");
             WiFi.disconnect();
-            WiFi.reconnect();
+            delay(100);
+            WiFi.begin(ssid, password); // Use WiFi.begin() instead of reconnect()
+            
+            // Wait up to 10 seconds for reconnection
+            int attempts = 0;
+            while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+                delay(500);
+                attempts++;
+            }
+            
+            if (WiFi.status() == WL_CONNECTED) {
+                logMessage(String("[WIFI] Reconnected successfully"));
+            } else {
+                logMessage(String("[WIFI] Reconnection failed, will retry later"));
+            }
+        }
+    }
+    
+    // Log WiFi signal strength every 10 minutes
+    if (millis() - lastSignalLog > 600000) { // 600000 ms = 10 minutes
+        lastSignalLog = millis();
+        if (WiFi.status() == WL_CONNECTED) {
+            int rssi = WiFi.RSSI();
+            logMessage(String("[WIFI] Signal strength: ") + rssi + " dBm");
         }
     }
     
     OTA::handle();
     
-    // Only update mDNS if WiFi is connected
-    if (WiFi.status() == WL_CONNECTED) {
+    // Only update mDNS if WiFi is connected, and limit frequency
+    static unsigned long lastMDNSUpdate = 0;
+    if (WiFi.status() == WL_CONNECTED && (millis() - lastMDNSUpdate > 1000)) {
+        lastMDNSUpdate = millis();
         MDNS.update();
     }
-    
+
     // Read available bytes with yield for WiFi stack to avoid blocking network operations
     int bytesProcessed = 0;
     while (dbus.available() && bytesProcessed < MAX_BYTES_PER_LOOP) {
