@@ -31,6 +31,7 @@ uint8_t        frameBuffer[MAX_FRAME];
 int            frameLen                 = 0;
 unsigned long  lastByteTime             = 0;
 const unsigned long FRAME_TIMEOUT       = 2000; // microseconds
+const int      MAX_BYTES_PER_LOOP       = 64; // Processing max 64 bytes per loop avoids network issues
 
 // Lookahead buffer to detect frame start pattern: <any>, 0x65
 uint8_t        prevByte2                = 0;    // previous byte
@@ -55,9 +56,22 @@ void turnOffWiFi() {
 
 void turnOnWiFi() {
     WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
+    WiFi.setSleepMode(WIFI_NONE_SLEEP); // Disable WiFi sleep to prevent disconnections
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED){
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 40) { // 20 seconds timeout
         delay(500);
+        Serial.print(".");
+        attempts++;
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nWiFi connected!");
+    } else {
+        Serial.println("\nWiFi connection failed!");
     }
 }
 
@@ -311,11 +325,29 @@ void handleWebSerialMessage(uint8_t *data, size_t len){
 }
 
 void loop() {
+    // Check WiFi connection periodically and reconnect if needed
+    static unsigned long lastWiFiCheck = 0;
+    if (millis() - lastWiFiCheck > 30000) { // Check every 30 seconds
+        lastWiFiCheck = millis();
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("WiFi disconnected! Attempting to reconnect...");
+            WiFi.disconnect();
+            WiFi.reconnect();
+        }
+    }
+    
     OTA::handle();
-    MDNS.update();
-    // read all available bytes
-    while (dbus.available()) {
+    
+    // Only update mDNS if WiFi is connected
+    if (WiFi.status() == WL_CONNECTED) {
+        MDNS.update();
+    }
+    
+    // Read available bytes with yield for WiFi stack to avoid blocking network operations
+    int bytesProcessed = 0;
+    while (dbus.available() && bytesProcessed < MAX_BYTES_PER_LOOP) {
         uint8_t b = dbus.read();
+        bytesProcessed++;
         lastByteTime = micros();
         digitalWrite(LED_PIN, HIGH); // show activity
 
@@ -447,4 +479,7 @@ void loop() {
         frameLen = 0;
         inFrame = false;
     }
+    
+    // Yield to WiFi/network stack - critical for maintaining connectivity
+    yield();
 }
