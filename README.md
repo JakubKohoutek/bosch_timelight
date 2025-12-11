@@ -18,6 +18,14 @@ The TimeLight projector module on my Bosch dishwasher (model SMV68MX04E/29) fail
 - **Connection** - GPIO4 (D2) to D-Bus DATA line (must lower the voltage!), RX-only via SoftwareSerial
 - **Baud Rate** - 9600 (8N1)
 
+### Time Light module
+
+The Time Light module is connected with 3 wires: 
+- Gnd
+- Vcc (12 volts)
+- Data (5 volts)
+
+
 ## WiFi Configuration
 
 Create a `credentials.h` file in your Arduino libraries folder at `Arduino/libraries/Credentials/credentials.h`:
@@ -51,7 +59,7 @@ D-Bus 2 is a single-wire bus protocol used in Bosch appliances. All participants
 │  │  └─────┬──────┘ └─┬─┘ │
 │  │        │          │   └─ ACK byte: 0x1A
 │  │        │          └───── CRC16-XMODEM Checksum (2 bytes): 0xDE62
-│  │        └──────────────── 5 data bytes (command + parameters)
+│  │        └──────────────── 5 data bytes (command, [subcommand] + parameters)
 │  └───────────────────────── DS: 0x14 (Dest=0x1, Sub=0x4)
 └──────────────────────────── Length: 5 data bytes (except dest, checksum and ack)
 ```
@@ -89,10 +97,10 @@ Time frame structure:
 
 **Other useful commands:**
 ```
-05 65 20 04 00 00 00 a7 fb 6a  Subcommand 04 with params 00 => program start
-03 65 20 00 64 a1 a1 6a        Subcommand 00 with param 64 => program end
+05 65 20 04 00 00 00 a7 fb 6a  Subcommand 04 + params 00 => program start
+03 65 20 00 64 a1 a1 6a        Subcommand 00 + param from 0 to 0x64 (100), progress report (end at 0x64 %)
 03 65 20 06 02 07 67 6a        Subcommand 06 => sensor status, door open (0b0???) vs. closed (0b1???)
-03 65 20 12 00 e8 92 6a        Subcommand 12 with param 00 => machine off
+03 65 20 12 00 e8 92 6a        Subcommand 12 + param 00 => machine off
 ```
 
 ### Acknowledgement
