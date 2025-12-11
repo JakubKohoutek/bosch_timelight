@@ -15,6 +15,10 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define DBUS_PIN 4      // D2
 #define LED_PIN LED_BUILTIN
+#define SUBCOMMAND_POS 3
+#define FULL_TIME_REPORT_SUBCMD 0x08
+#define PROGRESS_REPORT_SUBCMD 0x00
+#define PROGRAM_START_SUBCMD 0x04
 
 SoftwareSerial dbus(DBUS_PIN, -1); // RX only, no TX
 AsyncWebServer server(80);
@@ -36,6 +40,11 @@ bool           inFrame                  = false;
 int            remainingHours           = 0;
 int            remainingMinutes         = 0;
 unsigned long  lastUpdateTime           = 0;
+
+// Other state info tracking
+String         currentPhase             = "Idle";
+uint8_t        progressPercentage       = 0;
+bool           programRunning           = false;
 
 void turnOffWiFi() {
     logMessage(String("[MAIN] Turning the WiFi off"));
@@ -87,28 +96,78 @@ void setup() {
         html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=no'>";
         html += "<title>Dishwasher TimeLight</title>";
         html += "<style>";
-        html += "* { box-sizing: border-box; margin: 0; padding: 0; }";
-        html += "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }";
-        html += ".container { text-align: center; background: white; padding: clamp(20px, 5vw, 40px); border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 450px; }";
-        html += "h1 { color: #333; margin-bottom: clamp(15px, 4vw, 30px); font-size: clamp(20px, 6vw, 32px); }";
-        html += ".time { font-size: clamp(48px, 15vw, 72px); font-weight: bold; color: #667eea; margin: clamp(15px, 4vw, 20px) 0; line-height: 1.2; }";
-        html += ".status { font-size: clamp(14px, 4vw, 18px); color: #666; margin-top: clamp(10px, 3vw, 20px); }";
-        html += ".ip-info { font-size: 12px; color: #999; margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 8px; }";
-        html += ".ip-address { font-family: monospace; font-weight: bold; color: #667eea; font-size: 14px; }";
-        html += ".bookmark-hint { font-size: 11px; color: #666; margin-top: 5px; }";
-        html += ".links { margin-top: clamp(20px, 5vw, 30px); display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }";
-        html += "a { color: #667eea; text-decoration: none; font-size: clamp(14px, 4vw, 16px); padding: 10px 20px; border: 2px solid #667eea; border-radius: 8px; display: inline-block; transition: all 0.3s; min-width: 100px; }";
-        html += "a:hover, a:active { background: #667eea; color: white; }";
-        html += "@media (max-width: 480px) { .container { border-radius: 15px; } a { padding: 12px 18px; font-size: 15px; } }";
+        html += "* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }";
+        html += "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: clamp(10px, 3vw, 15px); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }";
+        html += ".container { text-align: center; background: white; padding: clamp(25px, 6vw, 40px); border-radius: clamp(15px, 4vw, 20px); box-shadow: 0 8px 32px rgba(0,0,0,0.2); width: 100%; max-width: 450px; }";
+        html += "h1 { color: #333; margin-bottom: clamp(20px, 5vw, 30px); font-size: clamp(22px, 6.5vw, 32px); line-height: 1.2; }";
+        html += ".time { font-size: clamp(56px, 16vw, 72px); font-weight: bold; color: #667eea; margin: clamp(10px, 3vw, 15px) 0; line-height: 1; text-shadow: 0 2px 4px rgba(102,126,234,0.1); }";
+        html += ".status { font-size: clamp(15px, 4.2vw, 18px); color: #666; margin: clamp(8px, 2vw, 12px) 0; }";
+        html += ".phase { font-size: clamp(17px, 4.8vw, 20px); color: #764ba2; font-weight: 600; margin: clamp(12px, 3.5vw, 18px) 0; padding: clamp(8px, 2vw, 12px); background: rgba(118,75,162,0.05); border-radius: 10px; }";
+        html += ".running-status { display: inline-flex; align-items: center; gap: 8px; font-size: clamp(14px, 3.8vw, 16px); padding: clamp(8px, 2.5vw, 12px) clamp(16px, 4vw, 20px); border-radius: 20px; margin: clamp(10px, 3vw, 15px) 0; font-weight: 500; }";
+        html += ".running-status.active { background: rgba(76,175,80,0.15); color: #2e7d32; border: 1px solid rgba(76,175,80,0.3); }";
+        html += ".running-status.inactive { background: rgba(158,158,158,0.08); color: #757575; border: 1px solid rgba(158,158,158,0.2); }";
+        html += ".status-dot { width: 8px; height: 8px; border-radius: 50%; }";
+        html += ".status-dot.active { background: #4caf50; animation: pulse 2s infinite; }";
+        html += ".status-dot.inactive { background: #bdbdbd; }";
+        html += "@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }";
+        html += ".empty-state { font-size: clamp(15px, 4vw, 17px); color: #999; margin: clamp(20px, 5vw, 30px) 0; font-style: italic; }";
+        html += ".last-updated { font-size: clamp(11px, 3vw, 12px); color: #aaa; margin-top: clamp(8px, 2vw, 10px); font-style: italic; }";
+        html += ".progress-container { margin: clamp(18px, 5vw, 25px) 0; }";
+        html += ".progress-label { font-size: clamp(13px, 3.8vw, 15px); color: #666; margin-bottom: 10px; font-weight: 500; }";
+        html += ".progress-bar { width: 100%; height: clamp(32px, 8vw, 36px); background: #e0e0e0; border-radius: 18px; overflow: visible; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }";
+        html += ".progress-fill { height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); border-radius: 18px; transition: width 0.5s ease; position: absolute; top: 0; left: 0; box-shadow: 0 2px 8px rgba(102,126,234,0.3); }";
+        html += ".progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #333; font-weight: bold; font-size: clamp(13px, 3.8vw, 15px); z-index: 1; text-shadow: 0 1px 2px rgba(255,255,255,0.8); }";
+        html += ".links { margin-top: clamp(20px, 5vw, 30px); display: flex; gap: clamp(12px, 3vw, 15px); justify-content: center; flex-wrap: wrap; }";
+        html += "a { color: #667eea; text-decoration: none; font-size: clamp(15px, 4.2vw, 16px); padding: clamp(12px, 3vw, 14px) clamp(20px, 5vw, 24px); border: 2px solid #667eea; border-radius: 10px; display: inline-block; transition: all 0.3s; min-width: clamp(110px, 28vw, 130px); font-weight: 500; box-shadow: 0 2px 8px rgba(102,126,234,0.15); }";
+        html += "a:hover, a:active { background: #667eea; color: white; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.3); }";
+        html += ".ip-toggle { font-size: clamp(11px, 3vw, 12px); color: #667eea; cursor: pointer; margin-top: clamp(15px, 4vw, 20px); text-decoration: underline; user-select: none; }";
+        html += ".ip-info { font-size: clamp(11px, 3vw, 12px); color: #999; margin-top: clamp(10px, 3vw, 12px); padding: clamp(12px, 3vw, 15px); background: #f5f5f5; border-radius: 10px; display: none; }";
+        html += ".ip-info.show { display: block; }";
+        html += ".ip-address { font-family: 'Courier New', monospace; font-weight: bold; color: #667eea; font-size: clamp(13px, 3.5vw, 14px); }";
+        html += ".bookmark-hint { font-size: clamp(10px, 2.8vw, 11px); color: #666; margin-top: 6px; }";
+        html += "@media (max-width: 480px) { body { padding: 10px; } .container { padding: 20px; } }";
         html += "</style>";
         html += "<script>";
+        html += "let lastUpdate = Date.now();";
         html += "function updateTime() {";
         html += "  fetch('/api/time').then(r => r.json()).then(data => {";
-        html += "    document.getElementById('time').innerText = data.time;";
-        html += "    document.getElementById('status').innerText = data.status;";
+        html += "    const timeEl = document.getElementById('time');";
+        html += "    const statusEl = document.getElementById('status');";
+        html += "    timeEl.innerText = data.time;";
+        html += "    if(data.time === 'Done!') {";
+        html += "      statusEl.innerText = 'Status: Complete';";
+        html += "    } else if(data.time === '--:--') {";
+        html += "      if(statusEl) statusEl.style.display = 'none';";
+        html += "    } else {";
+        html += "      if(statusEl) { statusEl.style.display = 'block'; statusEl.innerText = data.status; }";
+        html += "    }";
+        html += "    if(data.phase) document.getElementById('phase').innerText = data.phase;";
+        html += "    if(data.progress !== undefined) {";
+        html += "      document.getElementById('progress-fill').style.width = data.progress + '%';";
+        html += "      document.getElementById('progress-text').innerText = data.progress + '%';";
+        html += "    }";
+        html += "    const runningEl = document.getElementById('running-status');";
+        html += "    if(data.running) {";
+        html += "      runningEl.className = 'running-status active';";
+        html += "      runningEl.innerHTML = '<span class=\"status-dot active\" id=\"status-dot\"></span>Running';";
+        html += "    } else {";
+        html += "      runningEl.className = 'running-status inactive';";
+        html += "      runningEl.innerHTML = '<span class=\"status-dot inactive\" id=\"status-dot\"></span>Idle';";
+        html += "    }";
+        html += "    lastUpdate = Date.now();";
+        html += "    updateLastUpdated();";
         html += "  }).catch(e => console.error('Update failed:', e));";
         html += "}";
+        html += "function updateLastUpdated() {";
+        html += "  const seconds = Math.floor((Date.now() - lastUpdate) / 1000);";
+        html += "  const el = document.getElementById('last-updated');";
+        html += "  if(el) el.innerText = seconds === 0 ? 'Just updated' : 'Updated ' + seconds + 's ago';";
+        html += "}";
+        html += "function toggleIP() {";
+        html += "  document.getElementById('ip-info').classList.toggle('show');";
+        html += "}";
         html += "setInterval(updateTime, 10000);";
+        html += "setInterval(updateLastUpdated, 1000);";
         html += "</script>";
         html += "</head><body>";
         html += "<div class='container'>";
@@ -125,20 +184,52 @@ void setup() {
                 html += "Done!";
             }
             html += "</div>";
-            html += "<div class='status' id='status'>Remaining Time</div>";
+            html += "<div class='status' id='status'>";
+            if (remainingHours == 0 && remainingMinutes == 0) {
+                html += "Status: Complete";
+            } else {
+                html += "Remaining Time";
+            }
+            html += "</div>";
         } else {
             html += "<div class='time' id='time'>--:--</div>";
-            html += "<div class='status' id='status'>No data</div>";
+            html += "<div class='empty-state'>⏳ Waiting for dishwasher data...</div>";
         }
         
+        // Add current phase (reordered to appear before running status)
+        html += "<div class='phase' id='phase'>" + currentPhase + "</div>";
+        
+        // Add program running status
+        if (programRunning) {
+            html += "<div class='running-status active' id='running-status'>";
+            html += "<span class='status-dot active' id='status-dot'></span>Running";
+            html += "</div>";
+        } else {
+            html += "<div class='running-status inactive' id='running-status'>";
+            html += "<span class='status-dot inactive' id='status-dot'></span>Idle";
+            html += "</div>";
+        }
+        
+        // Add last updated indicator
+        html += "<div class='last-updated' id='last-updated'>Just updated</div>";
+        
+        // Add progress bar
+        html += "<div class='progress-container'>";
+        html += "<div class='progress-label'>Progress</div>";
+        html += "<div class='progress-bar'>";
+        html += "<div class='progress-fill' id='progress-fill' style='width:" + String(progressPercentage) + "%'></div>";
+        html += "<span class='progress-text' id='progress-text'>" + String(progressPercentage) + "%</span>";
+        html += "</div></div>";
+        
         html += "<div class='links'>";
-        html += "<a href='/logs'>View Logs</a>";
-        html += "<a href='/webserial'>WebSerial</a>";
+        html += "<a href='/logs'>📋 View Logs</a>";
+        html += "<a href='/webserial'>💻 WebSerial</a>";
         html += "</div>";
         
-        // Add IP address info for easy bookmarking
-        html += "<div class='ip-info'>";
-        html += "📱 Bookmark this page:<br>";
+        // Add collapsible IP address info for bookmarking
+        html += "<div class='ip-toggle' onclick='toggleIP()'>📱 Show bookmark info</div>";
+        html += "<div class='ip-info' id='ip-info'>";
+        html += "<strong>Bookmark this page:</strong><br>";
         html += "<span class='ip-address'>http://" + WiFi.localIP().toString() + "/</span><br>";
         html += "<span class='bookmark-hint'>(Tap browser menu → Add to Home Screen)</span>";
         html += "</div>";
@@ -171,7 +262,11 @@ void setup() {
             status = "No data";
         }
         
-        json += "\",\"status\":\"" + status + "\"}";
+        json += "\",\"status\":\"" + status + "\"";
+        json += ",\"phase\":\"" + currentPhase + "\"";
+        json += ",\"progress\":" + String(progressPercentage);
+        json += ",\"running\":" + String(programRunning ? "true" : "false");
+        json += "}";
         request->send(200, "application/json", json);
     });
 
@@ -251,7 +346,7 @@ void loop() {
                         digitalWrite(LED_PIN, LOW);
                         
                         // Verify frame ends with 0x6A
-                        if (frameBuffer[frameLen - 1] == 0x6A && frameBuffer[2] == 0x20) {
+                        if (frameBuffer[frameLen - 1] == 0x6A && frameBuffer[2] == 0x20 && frameLen >= 5) {
                             char logLine[256];
                             int pos = snprintf(logLine, sizeof(logLine), "[TimeLight FRAME] ");
                             
@@ -259,12 +354,57 @@ void loop() {
                                 pos += snprintf(logLine + pos, sizeof(logLine) - pos, "%02x ", frameBuffer[i]);
                             }
                             
-                            if (frameLen >= 5 && frameBuffer[3] == 0x08) {
-                                uint8_t hexValue = frameBuffer[4];
-                                remainingHours = hexValue / 60;
-                                remainingMinutes = hexValue % 60;
+                            // Handle full time report
+                            if (frameBuffer[SUBCOMMAND_POS] == FULL_TIME_REPORT_SUBCMD) {
+                                uint8_t remainingTimeHex = frameBuffer[4];
+                                remainingHours = remainingTimeHex / 60;
+                                remainingMinutes = remainingTimeHex % 60;
+                                
+                                uint8_t currentPhaseHex = frameBuffer[10];
+                                if (programRunning) {
+                                    switch (currentPhaseHex) {
+                                        case 0x00:
+                                            currentPhase = "Drying";
+                                            break;
+                                        case 0x01:
+                                            currentPhase = "Rinsing";
+                                            break;
+                                        case 0x02:
+                                            currentPhase = "Washing";
+                                            break;
+                                        case 0x03:
+                                            currentPhase = "Pre-Wash";
+                                            break;
+                                        default:
+                                            currentPhase = "Unknown";
+                                            break;
+                                    }
+                                }
                                 lastUpdateTime = millis();
                                 snprintf(logLine + pos, sizeof(logLine) - pos, "Remaining time: %02d:%02d", remainingHours, remainingMinutes);
+                            }
+                            
+                            // Handle progress report including percentage and program completion
+                            if (frameBuffer[SUBCOMMAND_POS] == PROGRESS_REPORT_SUBCMD) {
+                                progressPercentage = frameBuffer[4];
+                                if (progressPercentage == 100) {
+                                    programRunning = false;
+                                    currentPhase = "Done";
+                                    snprintf(logLine + pos, sizeof(logLine) - pos, "Program completed");
+                                } else if (progressPercentage > 0 && !programRunning) {
+                                    programRunning = true;
+                                    snprintf(logLine + pos, sizeof(logLine) - pos, "Program run identified");
+                                } else {
+                                    snprintf(logLine + pos, sizeof(logLine) - pos, "Progress: %d%%", progressPercentage);
+                                }
+                            }
+
+                            // Handle program start indication
+                            if (frameBuffer[SUBCOMMAND_POS] == PROGRAM_START_SUBCMD) {
+                                if (frameBuffer[4] == 0x00 && frameBuffer[5] == 0x00 && frameBuffer[6] == 0x00) {
+                                    programRunning = true;
+                                    snprintf(logLine + pos, sizeof(logLine) - pos, "Program started");
+                                }
                             }
                             
                             logMessage(String(logLine));
