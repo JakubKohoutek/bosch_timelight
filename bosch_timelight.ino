@@ -358,7 +358,21 @@ void loop() {
         lastSignalLog = millis();
         if (WiFi.status() == WL_CONNECTED) {
             int rssi = WiFi.RSSI();
-            logMessage(String("[WIFI] Signal strength: ") + rssi + " dBm");
+            String quality = "unknown";
+            if (rssi >= -50) {
+                quality = "Excellent";
+            } else if (rssi >= -60) {
+                quality = "Very good";
+            } else if (rssi >= -70) {
+                quality = "Good";
+            } else if (rssi >= -80) {
+                quality = "Fair";
+            } else if (rssi >= -90) {
+                quality = "Poor";
+            } else {
+                quality = "Very poor";
+            }
+            logMessage(String("[WIFI] Signal strength: ") + rssi + " dBm (" + quality + ")");
         }
     }
     
