@@ -101,6 +101,7 @@ Time frame structure:
 03 65 20 00 64 a1 a1 6a        Subcommand 00 + param from 0 to 0x64 (100), progress report (end at 0x64 %)
 03 65 20 06 02 07 67 6a        Subcommand 06 => sensor status, door open (0b0???) vs. closed (0b1???)
 03 65 20 12 00 e8 92 6a        Subcommand 12 + param 00 => machine off
+03 65 20 12 01 f8 b3 6a        Subcommand 12 + param 01 => program start?
 ```
 
 ### Acknowledgement

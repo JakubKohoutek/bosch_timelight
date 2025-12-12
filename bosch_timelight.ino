@@ -43,7 +43,6 @@ int            remainingMinutes         = 0;
 unsigned long  lastUpdateTime           = 0;
 
 // Other state info tracking
-String         currentPhase             = "Idle";
 uint8_t        progressPercentage       = 0;
 bool           programRunning           = false;
 
@@ -117,7 +116,6 @@ void setup() {
         html += "h1 { color: #333; margin-bottom: clamp(20px, 5vw, 30px); font-size: clamp(22px, 6.5vw, 32px); line-height: 1.2; }";
         html += ".time { font-size: clamp(56px, 16vw, 72px); font-weight: bold; color: #667eea; margin: clamp(10px, 3vw, 15px) 0; line-height: 1; text-shadow: 0 2px 4px rgba(102,126,234,0.1); }";
         html += ".status { font-size: clamp(15px, 4.2vw, 18px); color: #666; margin: clamp(8px, 2vw, 12px) 0; }";
-        html += ".phase { font-size: clamp(17px, 4.8vw, 20px); color: #764ba2; font-weight: 600; margin: clamp(12px, 3.5vw, 18px) 0; padding: clamp(8px, 2vw, 12px); background: rgba(118,75,162,0.05); border-radius: 10px; }";
         html += ".running-status { display: inline-flex; align-items: center; gap: 8px; font-size: clamp(14px, 3.8vw, 16px); padding: clamp(8px, 2.5vw, 12px) clamp(16px, 4vw, 20px); border-radius: 20px; margin: clamp(10px, 3vw, 15px) 0; font-weight: 500; }";
         html += ".running-status.active { background: rgba(76,175,80,0.15); color: #2e7d32; border: 1px solid rgba(76,175,80,0.3); }";
         html += ".running-status.inactive { background: rgba(158,158,158,0.08); color: #757575; border: 1px solid rgba(158,158,158,0.2); }";
@@ -144,7 +142,10 @@ void setup() {
         html += "</style>";
         html += "<script>";
         html += "let lastUpdate = Date.now();";
+        html += "let fetchInProgress = false;";
         html += "function updateTime() {";
+        html += "  if (fetchInProgress) return;";
+        html += "  fetchInProgress = true;";
         html += "  fetch('/api/time').then(r => r.json()).then(data => {";
         html += "    const timeEl = document.getElementById('time');";
         html += "    const statusEl = document.getElementById('status');";
@@ -156,7 +157,6 @@ void setup() {
         html += "    } else {";
         html += "      if(statusEl) { statusEl.style.display = 'block'; statusEl.innerText = data.status; }";
         html += "    }";
-        html += "    if(data.phase) document.getElementById('phase').innerText = data.phase;";
         html += "    if(data.progress !== undefined) {";
         html += "      document.getElementById('progress-fill').style.width = data.progress + '%';";
         html += "      document.getElementById('progress-text').innerText = data.progress + '%';";
@@ -171,7 +171,11 @@ void setup() {
         html += "    }";
         html += "    lastUpdate = Date.now();";
         html += "    updateLastUpdated();";
-        html += "  }).catch(e => console.error('Update failed:', e));";
+        html += "    fetchInProgress = false;";
+        html += "  }).catch(e => {";
+        html += "    console.error('Update failed:', e);";
+        html += "    fetchInProgress = false;";
+        html += "  });";
         html += "}";
         html += "function updateLastUpdated() {";
         html += "  const seconds = Math.floor((Date.now() - lastUpdate) / 1000);";
@@ -210,10 +214,7 @@ void setup() {
             html += "<div class='time' id='time'>--:--</div>";
             html += "<div class='empty-state'>⏳ Waiting for dishwasher data...</div>";
         }
-        
-        // Add current phase (reordered to appear before running status)
-        html += "<div class='phase' id='phase'>" + currentPhase + "</div>";
-        
+
         // Add program running status
         if (programRunning) {
             html += "<div class='running-status active' id='running-status'>";
@@ -278,7 +279,6 @@ void setup() {
         }
         
         json += "\",\"status\":\"" + status + "\"";
-        json += ",\"phase\":\"" + currentPhase + "\"";
         json += ",\"progress\":" + String(progressPercentage);
         json += ",\"running\":" + String(programRunning ? "true" : "false");
         json += "}";
@@ -433,27 +433,6 @@ void loop() {
                                 uint8_t remainingTimeHex = frameBuffer[4];
                                 remainingHours = remainingTimeHex / 60;
                                 remainingMinutes = remainingTimeHex % 60;
-                                
-                                uint8_t currentPhaseHex = frameBuffer[10];
-                                if (programRunning) {
-                                    switch (currentPhaseHex) {
-                                        case 0x00:
-                                            currentPhase = "Drying";
-                                            break;
-                                        case 0x01:
-                                            currentPhase = "Rinsing";
-                                            break;
-                                        case 0x02:
-                                            currentPhase = "Washing";
-                                            break;
-                                        case 0x03:
-                                            currentPhase = "Pre-Wash";
-                                            break;
-                                        default:
-                                            currentPhase = "Unknown";
-                                            break;
-                                    }
-                                }
                                 lastUpdateTime = millis();
                                 snprintf(logLine + pos, sizeof(logLine) - pos, "Remaining time: %02d:%02d", remainingHours, remainingMinutes);
                             }
@@ -463,7 +442,6 @@ void loop() {
                                 progressPercentage = frameBuffer[4];
                                 if (progressPercentage == 100) {
                                     programRunning = false;
-                                    currentPhase = "Done";
                                     snprintf(logLine + pos, sizeof(logLine) - pos, "Program completed");
                                 } else if (progressPercentage > 0 && !programRunning) {
                                     programRunning = true;
